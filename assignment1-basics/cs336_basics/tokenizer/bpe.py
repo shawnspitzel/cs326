@@ -1,6 +1,5 @@
 import regex as re
 import warnings
-from pprint import pprint
 import pickle
 from pathlib import Path
 

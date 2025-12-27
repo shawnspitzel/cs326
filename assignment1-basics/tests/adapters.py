@@ -6,14 +6,14 @@ from typing import IO, Any, BinaryIO
 
 from cs336_basics.model.attention import MultiHeadAttention
 from cs336_basics.model.mlp import FeedForward
-from cs336_basics.model.rmsnorm import RMSNorm
+from cs336_basics.model.norms import RMSNorm
 from cs336_basics.model.rope import RotaryPositionalEmbedding
 from cs336_basics.model.scp_attention import SCPAttention
 from cs336_basics.model.softmax import softmax
 from cs336_basics.model.transformer import TransformerBlock, Transformer
 from cs336_basics.tokenizer.bpe import BPETokenizer
 from cs336_basics.model.linear import Linear
-from cs336_basics.model.embedding import Embedding
+from cs336_basics.model.embeddings import Embedding
 import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int

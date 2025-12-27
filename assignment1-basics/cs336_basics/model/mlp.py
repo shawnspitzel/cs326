@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from .linear import Linear
+from .util import Linear
 class FeedForward(nn.Module):
     def __init__(self, d_model: int, d_ff: int, device = None):
         super().__init__()
