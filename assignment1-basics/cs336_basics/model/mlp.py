@@ -1,7 +1,5 @@
 import torch.nn as nn
 import torch
-from jaxtyping import Float, Int
-from torch import Tensor
 from .linear import Linear
 class FeedForward(nn.Module):
     def __init__(self, d_model: int, d_ff: int, device = None):

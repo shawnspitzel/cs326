@@ -9,10 +9,10 @@ class Embedding(nn.Module):
         self.embedding_dim = embedding_dim # dimension of embedding vector
         self.device: torch.device | None = device
         self.dtype: torch.dtype | None = dtype
-        self.embedding = nn.Parameter(torch.empty(num_embeddings, embedding_dim, dtype=self.dtype, device=self.device))
-        nn.init.trunc_normal_(self.embedding, mean=0.0, std=0.02)
+        self.weight = nn.Parameter(torch.empty(num_embeddings, embedding_dim, dtype=self.dtype, device=self.device))
+        nn.init.trunc_normal_(self.weight, mean=0.0, std=0.02)
     def forward(self, token_ids: Int[Tensor, " ..."]) -> torch.Tensor:
        # Given a list of token ids, we want to find the vector for a 
        # corresponding token by performing a lookup into a tensor of 
        # token ids with shape (num_embeddings, embedding_dim)
-       return self.embedding[token_ids]
+       return self.weight[token_ids]

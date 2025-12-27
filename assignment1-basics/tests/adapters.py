@@ -4,10 +4,13 @@ import os
 from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
 
+from cs336_basics.model.attention import MultiHeadAttention
 from cs336_basics.model.mlp import FeedForward
 from cs336_basics.model.rmsnorm import RMSNorm
 from cs336_basics.model.rope import RotaryPositionalEmbedding
+from cs336_basics.model.scp_attention import SCPAttention
 from cs336_basics.model.softmax import softmax
+from cs336_basics.model.transformer import TransformerBlock, Transformer
 from cs336_basics.tokenizer.bpe import BPETokenizer
 from cs336_basics.model.linear import Linear
 from cs336_basics.model.embedding import Embedding
@@ -118,7 +121,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    return SCPAttention(Q, K, V, mask)
 
 
 def run_multihead_self_attention(
@@ -152,7 +155,13 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    attention = MultiHeadAttention(d_model, num_heads)
+    state_dict = {"q_proj.weight": q_proj_weight,
+                  "k_proj.weight": k_proj_weight,
+                  "v_proj.weight": v_proj_weight,
+                  "output_proj.weight": o_proj_weight}
+    attention.load_state_dict(state_dict)
+    return attention(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -192,7 +201,21 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+
+    d_k = d_model // num_heads
+    rope = RotaryPositionalEmbedding(
+        theta=theta,
+        d_k=d_k,
+        max_seq_len=max_seq_len
+    )
+
+    attention = MultiHeadAttention(d_model, num_heads, rope)
+    state_dict = {"q_proj.weight": q_proj_weight,
+                  "k_proj.weight": k_proj_weight,
+                  "v_proj.weight": v_proj_weight,
+                  "output_proj.weight": o_proj_weight}
+    attention.load_state_dict(state_dict)
+    return attention(in_features, token_positions)
 
 
 def run_rope(
@@ -288,7 +311,9 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer = TransformerBlock(d_model=d_model, num_heads=num_heads, d_ff=d_ff, theta=theta, max_seq_len=max_seq_len)
+    transformer.load_state_dict(weights)
+    return transformer(in_features)
 
 
 def run_transformer_lm(
@@ -370,7 +395,11 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer = Transformer(d_model=d_model, num_heads=num_heads, d_ff=d_ff, 
+                              vocab_size=vocab_size, context_length=context_length, 
+                              num_layers=num_layers, theta=rope_theta)
+    transformer.load_state_dict(weights)
+    return transformer(in_indices)
 
 
 def run_rmsnorm(
@@ -393,7 +422,7 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    state_dict = {"gamma":weights}
+    state_dict = {"weight":weights}
     rms_norm = RMSNorm(d_model, eps)
     rms_norm.load_state_dict(state_dict)
     return rms_norm(in_features)
