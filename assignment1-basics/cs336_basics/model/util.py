@@ -11,6 +11,7 @@ class Linear(nn.Module):
         nn.init.trunc_normal_(self.weight, mean=0.0, std=0.02)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x @ self.weight.t()
+    
 def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     x_max = torch.max(x, dim=dim, keepdim=True).values
     x_shifted = x - x_max

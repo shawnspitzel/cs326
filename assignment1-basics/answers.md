@@ -10,3 +10,6 @@
 # 2.5 - Tokenizer Training
 ### a) It took ~8 hours to train the tokenizer on the tinystories dataset. This can most likely be improved through algorithmic choices and multiprocessing. The longest token in the vocabulary is " enthusiastically".
 ### b) By far, rebuilding the corpus took the most time out of any other part of the training process, taking up 64% of total compute time. This can most likely be optimized by only rewriting affected pairs rather than rewriting the entire corpus on every merge.
+
+# 4.2 - Learning Rate Tuning
+### a) I notice that each learning rate has a wildly different outcome. A learning rate of 1e1 results in the model learning quite quickly in a relatively linear fashion, where 1e2 cut the loss in a very steep manner, almost non-linearly, where we spent quite some time in the 1e-17 to 1e-32 range before converging to 0.0. Most curiously, 1e3 ends up spiraling into infinity. 

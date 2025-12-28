@@ -1,4 +1,3 @@
-from cs336_basics.model.attention import SCPAttention
 from .embeddings import RotaryPositionalEmbedding
 from .util import Linear
 from .util import softmax
@@ -6,18 +5,19 @@ from torch import Tensor
 import torch.nn as nn
 import torch
 import math
-def SCPAttention(q: Tensor, k: Tensor, v: Tensor, mask: Tensor = None):
-    assert q.shape[-1] == k.shape[-1]
-    assert k.shape[-2] == v.shape[-2]
 
-    d_k = q.shape[-1]
-    attn_obj = torch.matmul(q, k.transpose(-2, -1))
-    attn_obj = attn_obj / math.sqrt(d_k)
-    if mask is not None:
-        attn_obj = attn_obj.masked_fill(mask==0, -float("inf"))
-    attn_obj = softmax(attn_obj, dim=-1)
-    result = torch.matmul(attn_obj, v)
-    return result
+def SCPAttention(q: Tensor, k: Tensor, v: Tensor, mask: Tensor = None):
+        assert q.shape[-1] == k.shape[-1]
+        assert k.shape[-2] == v.shape[-2]
+
+        d_k = q.shape[-1]
+        attn_obj = torch.matmul(q, k.transpose(-2, -1))
+        attn_obj = attn_obj / math.sqrt(d_k)
+        if mask is not None:
+            attn_obj = attn_obj.masked_fill(mask==0, -float("inf"))
+        attn_obj = softmax(attn_obj, dim=-1)
+        result = torch.matmul(attn_obj, v)
+        return result
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model: int, num_heads: int, rope: RotaryPositionalEmbedding | None = None):
@@ -31,6 +31,8 @@ class MultiHeadAttention(nn.Module):
         self.v_proj = Linear(d_model, num_heads*d_k)
         self.output_proj = Linear(num_heads*d_k, d_model)
         self.rope = rope
+
+    
     def forward(self, x: Tensor, token_positions: Tensor = None):
         B, T, _ = x.shape
         h = self.num_heads
