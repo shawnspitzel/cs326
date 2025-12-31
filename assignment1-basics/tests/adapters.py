@@ -609,7 +609,20 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    # Create tokenizer without special tokens to avoid auto-initialization conflicts
+    tokenizer = BPETokenizer(special_tokens=[])
+    # Override with the provided vocab and merges
+    # vocab is {id: bytes}, we need vocabulary = {bytes: id} and reverseVocab = {id: bytes}
+    tokenizer.vocabulary = {v: k for k, v in vocab.items()}  # {bytes: id}
+    tokenizer.reverseVocab = vocab  # {id: bytes}
+    tokenizer.merges = merges
+    tokenizer.sorted_merges = {
+        (a, b): i
+        for i, (a, b) in enumerate(merges)
+    }
+    # Set special tokens after vocabulary is loaded
+    tokenizer.special_tokens = special_tokens if special_tokens else []
+    return tokenizer
 
 
 def run_train_bpe(
@@ -639,5 +652,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    bp = BPETokenizer(input_path, vocab_size, special_tokens)
-    return bp.train_bpe()
+    bp = BPETokenizer(special_tokens=special_tokens)
+    return bp.train_bpe(input_path=input_path, vocab_size=vocab_size)

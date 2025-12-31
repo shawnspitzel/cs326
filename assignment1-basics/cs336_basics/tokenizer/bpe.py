@@ -1,41 +1,12 @@
 import regex as re
-import warnings
 import pickle
 from pathlib import Path
-from multiprocessing import Pool, cpu_count
 from collections import Counter
-
-def _rebuild_word(args):
-    """Worker function for parallel corpus rebuilding."""
-    word, merge_pair, merged_id = args
-    if len(word) < 2:
-        return word
-    new_word = []
-    i = 0
-    word_len = len(word)
-    while i < word_len:
-        if i < word_len - 1 and word[i] == merge_pair[0] and word[i+1] == merge_pair[1]:
-            new_word.append(merged_id)
-            i += 2
-        else:
-            new_word.append(word[i])
-            i += 1
-    return new_word
-
-
-def _count_pairs_chunk(args):
-    """Worker function for parallel pair frequency counting."""
-    word_chunk = args
-    pairs = []
-    for word in word_chunk:
-        pairs.extend(zip(word, word[1:]))
-    return Counter(pairs)
 
 
 class BPETokenizer:
-    def __init__(self, special_tokens: list[str] = [], num_workers: int = 1):
+    def __init__(self, special_tokens: list[str] = []):
         self.special_tokens = special_tokens
-        self.num_workers = num_workers if num_workers > 0 else cpu_count()
         self.vocabulary: dict[bytes, int] = {}
         self.reverseVocab: dict[int, bytes] = {}
         self.corpus: None | str = None
@@ -114,7 +85,11 @@ class BPETokenizer:
                 encoded_text.append([token_id])
                 continue
             tokens = re.findall(PAT, chunk)
-            encoded_text.extend([list(tok.encode("utf-8")) for tok in tokens])
+            # Convert byte values to token IDs using the vocabulary
+            for tok in tokens:
+                byte_values = tok.encode("utf-8")
+                token_ids = [self.vocabulary[bytes([b])] for b in byte_values]
+                encoded_text.append(token_ids)
 
         return encoded_text
 
@@ -126,44 +101,71 @@ class BPETokenizer:
             n+=1
         self.reverseVocab = {v: k for k, v in self.vocabulary.items()}
 
-    def _rebuild_corpus(self, merge_pair):
-        merged_bytes = self.reverseVocab[merge_pair[0]] + self.reverseVocab[merge_pair[1]]
-        merged_id = self.vocabulary[merged_bytes]
+    def _merge_word(self, word, merge_pair, merged_id):
+        """Apply a single merge to a word tuple."""
+        if len(word) < 2:
+            return word
 
-        if self.num_workers > 1 and len(self.tokenizedCorpus) > 1000:
-            with Pool(self.num_workers) as pool:
-                new_corpus = pool.map(_rebuild_word, [(word, merge_pair, merged_id) for word in self.tokenizedCorpus])
-            self.tokenizedCorpus = new_corpus
-        else:
-            merge_left, merge_right = merge_pair
-            new_corpus = []
-            for word in self.tokenizedCorpus:
-                if len(word) < 2:
-                    new_corpus.append(word)
-                    continue
+        new_word = []
+        i = 0
+        while i < len(word):
+            if i < len(word) - 1 and word[i] == merge_pair[0] and word[i + 1] == merge_pair[1]:
+                new_word.append(merged_id)
+                i += 2
+            else:
+                new_word.append(word[i])
+                i += 1
+        return tuple(new_word)
 
-                new_word = []
-                i = 0
-                word_len = len(word)
-                while i < word_len:
-                    if i < word_len - 1 and word[i] == merge_left and word[i+1] == merge_right:
-                        new_word.append(merged_id)
-                        i += 2
-                    else:
-                        new_word.append(word[i])
-                        i += 1
-                new_corpus.append(new_word)
-            self.tokenizedCorpus = new_corpus
+    def _update_pairs_after_merge(self, word_freqs, best_pair, next_id):
+        """Incrementally update word frequencies and return only changed pairs."""
+        new_word_freqs = {}
+        pair_delta = Counter()
+
+        for word, freq in word_freqs.items():
+            # Check if this word contains the pair to merge
+            has_pair = False
+            for i in range(len(word) - 1):
+                if word[i] == best_pair[0] and word[i + 1] == best_pair[1]:
+                    has_pair = True
+                    break
+
+            if not has_pair:
+                # Word unchanged, keep as-is
+                new_word_freqs[word] = freq
+                continue
+
+            # Remove old pairs from this word
+            for i in range(len(word) - 1):
+                pair = (word[i], word[i + 1])
+                pair_delta[pair] -= freq
+
+            # Apply merge
+            new_word = self._merge_word(word, best_pair, next_id)
+            new_word_freqs[new_word] = freq
+
+            # Add new pairs from merged word
+            for i in range(len(new_word) - 1):
+                pair = (new_word[i], new_word[i + 1])
+                pair_delta[pair] += freq
+
+        return new_word_freqs, pair_delta
 
     def _merge_bpe(self, input_enc: list):
         output = []
         for word in input_enc:
-            word = word[:]
-            while True:
-                best_merge_rank = None
-                best_merge_index = None
-                best_merge_pair = None
+            if len(word) < 2:
+                output.append(word)
+                continue
 
+            word = word[:]
+            # Repeatedly find and apply the highest-priority merge
+            while True:
+                best_rank = float('inf')
+                best_pos = None
+                best_merged_id = None
+
+                # Scan through the word to find the highest-priority mergeable pair
                 for i in range(len(word) - 1):
                     left_id = word[i]
                     right_id = word[i + 1]
@@ -172,26 +174,22 @@ class BPETokenizer:
                     right_bytes = self.reverseVocab[right_id]
                     pair = (left_bytes, right_bytes)
 
-                    if pair not in self.sorted_merges:
-                        continue
+                    if pair in self.sorted_merges:
+                        rank = self.sorted_merges[pair]
+                        if rank < best_rank:
+                            best_rank = rank
+                            best_pos = i
+                            # Pre-compute merged_id to avoid bytes concatenation in inner loop
+                            merged_bytes = left_bytes + right_bytes
+                            best_merged_id = self.vocabulary[merged_bytes]
 
-                    rank = self.sorted_merges[pair]
-
-                    if best_merge_rank is None or rank < best_merge_rank:
-                        best_merge_rank = rank
-                        best_merge_index = i
-                        best_merge_pair = pair
-
-                if best_merge_pair is None:
+                if best_pos is None:
+                    # No more merges possible
                     break
-                merged_bytes = best_merge_pair[0] + best_merge_pair[1]
-                merged_pair = self.vocabulary[merged_bytes]
 
-                word = (
-                    word[:best_merge_index]
-                    + [merged_pair]
-                    + word[best_merge_index + 2 :]
-                )
+                # Apply the best merge found
+                word[best_pos] = best_merged_id
+                word.pop(best_pos + 1)
 
             output.append(word)
         return output
@@ -204,57 +202,67 @@ class BPETokenizer:
         if self._load(cache_path):
             print(f"Loaded tokenizer from cache: {cache_path}")
             return self.reverseVocab, self.merges
-        
+
+        self._initialize_vocabulary()
         self._initialize_training(input_path, vocab_size)
 
-        next_id = len(self.vocabulary)
-        while True:
-            if self.num_workers > 1 and len(self.tokenizedCorpus) > 1000:
-                chunk_size = len(self.tokenizedCorpus) // self.num_workers
-                chunks = [self.tokenizedCorpus[i:i+chunk_size] for i in range(0, len(self.tokenizedCorpus), chunk_size)]
+        word_freqs = Counter()
+        for word in self.tokenizedCorpus:
+            word_freqs[tuple(word)] += 1
 
-                with Pool(self.num_workers) as pool:
-                    freq_counters = pool.map(_count_pairs_chunk, chunks)
-                freq = Counter()
-                for counter in freq_counters:
-                    freq.update(counter)
-            else:
-                pairs = []
-                for word in self.tokenizedCorpus:
-                    pairs.extend(zip(word, word[1:]))
-                freq = Counter(pairs)
-            candidates = (
-                (pair, count)
-                for pair, count in freq.items()
-                if (self.reverseVocab[pair[0]] + self.reverseVocab[pair[1]]) not in self.vocabulary
-            )
-            if not candidates:
+        # Build initial pair frequencies once
+        pair_freqs = Counter()
+        for word, count in word_freqs.items():
+            for i in range(len(word) - 1):
+                pair_freqs[(word[i], word[i + 1])] += count
+
+        next_id = len(self.vocabulary)
+        while len(self.vocabulary) < vocab_size:
+            if not pair_freqs:
                 break
-            try:
-                max_freq = max(candidates, key=lambda x: x[1])
-            except ValueError:
-                break
-            merge_pair = max_freq[0]
-            new_index = self.reverseVocab[merge_pair[0]] + self.reverseVocab[merge_pair[1]]
-            if len(self.vocabulary) >= self.vocab_size:
-                warnings.warn(f"Tokenizer vocabulary exceeded maximum length of {self.vocab_size} ",UserWarning)
-                break
-            self.vocabulary[new_index] = next_id
-            self.reverseVocab[next_id] = new_index
-            self.merges.append((self.reverseVocab[merge_pair[0]], self.reverseVocab[merge_pair[1]]))
+
+            # Find best pair
+            best_pair = max(
+                pair_freqs.items(),
+                key=lambda x: (x[1], (self.reverseVocab[x[0][0]], self.reverseVocab[x[0][1]]))
+            )[0]
+
+            # Convert to bytes only once for vocabulary
+            merged_bytes = self.reverseVocab[best_pair[0]] + self.reverseVocab[best_pair[1]]
+            if merged_bytes in self.vocabulary:
+                # Remove this pair and continue
+                del pair_freqs[best_pair]
+                continue
+
+            self.vocabulary[merged_bytes] = next_id
+            self.reverseVocab[next_id] = merged_bytes
+            self.merges.append((self.reverseVocab[best_pair[0]], self.reverseVocab[best_pair[1]]))
+
+            # Incremental update: only update affected words and pairs
+            word_freqs, pair_delta = self._update_pairs_after_merge(word_freqs, best_pair, next_id)
+
+            # Apply delta to pair frequencies
+            for pair, delta in pair_delta.items():
+                pair_freqs[pair] += delta
+                if pair_freqs[pair] <= 0:
+                    del pair_freqs[pair]
+
             next_id += 1
-            self._rebuild_corpus(max_freq[0])
+
+        self.sorted_merges = {
+            (a, b): i
+            for i, (a, b) in enumerate(self.merges)
+        }
         self._save(cache_path)
         return self.reverseVocab, self.merges
     
     def encode(self, input_str: str):
         tokenized_str = self._pre_tokenize(input_str)
         encoded_str = self._merge_bpe(tokenized_str)
-        return encoded_str
-    
+        # Flatten the list of word-lists into a single list of token IDs
+        return [token for word in encoded_str for token in word]
+
     def decode(self, tokenized_input: list[int]):
-        output = ""
-        for word in tokenized_input:
-            for token in word:
-                output += self.reverseVocab[token].decode("utf-8")
-        return output
+        # Collect all bytes first, then decode
+        all_bytes = b"".join(self.reverseVocab[token] for token in tokenized_input)
+        return all_bytes.decode("utf-8", errors="replace")
