@@ -1,39 +1,74 @@
-d_model: 768
-num_heads: 12
-d_ff: 3072
-num_layers: 12
-vocab_size: 50257
-context_length: 1024
-theta: 10000.0
+program: training/pretrain.py
+method: grid
+metric:
+  name: val/loss
+  goal: minimize
 
-batch_size: 64
-max_iters: 100000
-eval_interval: 500
-eval_iters: 100
-log_interval: 100
-checkpoint_interval: 1000
-seed: 42
+parameters:
+  # Sweep parameter - learning rate
+  learning_rate:
+    values: [3.0e-4, 6.0e-4, 1.0e-3]
+  d_model:
+    value: 768
+  num_heads:
+    value: 12
+  d_ff:
+    value: 3072
+  num_layers:
+    value: 12
+  vocab_size:
+    value: 50257
+  context_length:
+    value: 1024
+  theta:
+    value: 10000.0
 
-optimizer: adamw
-learning_rate: 0.0006
-min_lr: 0.00006
-weight_decay: 0.01
-beta1: 0.9
-beta2: 0.999
-gradient_clip_norm: 1.0
+  batch_size:
+    value: 64
+  max_iters:
+    value: 100000
+  eval_interval:
+    value: 500
+  eval_iters:
+    value: 100
+  log_interval:
+    value: 100
+  checkpoint_interval:
+    value: 1000
+  seed:
+    value: 42
 
-warmup_iters: 2000
-cosine_iters: 100000
+  optimizer:
+    value: adamw
+  min_lr:
+    value: 6.0e-5
+  weight_decay:
+    value: 0.01
+  beta1:
+    value: 0.9
+  beta2:
+    value: 0.999
+  gradient_clip_norm:
+    value: 1.0
+  warmup_iters:
+    value: 2000
+  cosine_iters:
+    value: 100000
 
-train_data: data/tinystories_train_tokens.bin
-val_data: data/tinystories_val_tokens.bin
-data_dtype: uint16
-checkpoint_dir: checkpoints/gpt2-small-tinystories
-resume_from: null
+  train_data:
+    value: data/tokenized/tinystories/train/ADD_TRAIN_DATA.bin
+  val_data:
+    value: data/tokenized/tinystories/val/ADD_VAL_DATA.bin
+  data_dtype:
+    value: uint16
 
-use_wandb: false
-wandb_project: cs336-assignment1
-wandb_run_name: null
+  checkpoint_dir:
+    value: checkpoints/gpt2-small-tinystories
+    
+  resume_from:
+    value: null
 
-device: cuda
-compile: false
+  device:
+    value: mps
+  compile:
+    value: true

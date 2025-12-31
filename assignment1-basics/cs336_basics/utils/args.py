@@ -36,10 +36,10 @@ def get_args_pretrain():
     parser.add_argument('--cosine_iters', type=int, default=100000)
 
     # data paths
-    parser.add_argument('--train_data', type=str, default='data/tinystories_train_tokens.bin') # TODO: Implement this path
-    parser.add_argument('--val_data', type=str, default='data/tinystories_val_tokens.bin') # TODO: Implement this path
+    parser.add_argument('--train_data', type=str, required=True)
+    parser.add_argument('--val_data', type=str, required=True)
     parser.add_argument('--data_dtype', type=str, default='uint16')
-    parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/gpt2-small-tinystories') # TODO: Implement this path
+    parser.add_argument('--checkpoint_dir', type=str, required=True)
     parser.add_argument('--resume_from', type=str, default=None)
 
     # wandb
@@ -50,6 +50,10 @@ def get_args_pretrain():
     # device setup
     parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu', 'mps'])
     parser.add_argument('--compile', action='store_true')
+
+    # profiling
+    parser.add_argument('--profile', action='store_true', help='Enable cProfile profiling')
+    parser.add_argument('--profile_output', type=str, default='checkpoints/profile_stats.prof', help='Output file for profiling stats')
 
     args = parser.parse_args()
     return vars(args)

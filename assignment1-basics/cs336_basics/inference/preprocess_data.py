@@ -3,6 +3,9 @@ import numpy as np
 import os
 from pathlib import Path
 from multiprocessing import Pool
+import cProfile
+import pstats
+from io import StringIO
 from cs336_basics.tokenizer.bpe import BPETokenizer
 from cs336_basics.inference.pretokenization import find_chunk_boundaries
 
@@ -183,6 +186,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    profiler = cProfile.Profile()
+    profiler.enable()
+
     preprocess_data(
         train_file=args.train_file,
         val_file=args.val_file,
@@ -190,3 +196,10 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         num_workers=args.num_workers
     )
+
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    stats.sort_stats('cumulative')
+    stats.print_stats(30)
+    stats.sort_stats('time')
+    stats.print_stats(20)

@@ -1,10 +1,10 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import torch
 from torch import Tensor
 import math
 def cross_entropy_loss(inputs: Tensor, targets: Tensor):
-    log_probs = torch.log_softmax(inputs, dim=-1)
-    return -log_probs[torch.arange(targets.shape[0]), targets].mean()
+    return F.cross_entropy(inputs.view(-1, inputs.size(-1)), targets.view(-1))
 
 def learning_rate_schedule(curr_iter, max_lr, min_lr, warm_iters, cos_iters):
     if curr_iter < warm_iters:
